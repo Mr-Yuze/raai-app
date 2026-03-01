@@ -11,7 +11,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "raai-academic-os-2024")
 
 # ── Groq Client ────────────────────────────────────────
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-MODEL  = "llama3-70b-8192"   # fast + smart on Groq free tier
+MODEL  = "llama-3.3-70b-versatile"   # fast + smart on Groq free tier
 
 # ── In-memory stores ───────────────────────────────────
 all_chats     = {}   # uid -> { cid -> {title, messages, created} }
