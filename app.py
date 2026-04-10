@@ -15,7 +15,7 @@ MODEL  = "llama-3.3-70b-versatile"   # fast + smart on Groq free tier
 
 # ── In-memory stores ───────────────────────────────────
 all_chats     = {}   # uid -> { cid -> {title, messages, created} }
-file_contents = {}   # uid_cid -> text
+file_contents = {}   # uid_cid -> text 
 user_profiles = {}   # uid -> { name, dept, year, cgpa, weak_areas, learning_style }
 
 # ── System Prompt ──────────────────────────────────────
@@ -585,7 +585,7 @@ def cgpa_planner():
         hrs = "3+ hrs/day" if s['priority']=='High' else ("2 hrs/day" if s['priority']=='Medium' else "1 hr/day")
         prompt += f"SUBJECT: {s['name']} | {req_pct}% target | {s['priority']} | {hrs} | [2-3 specific study actions]\n"
 
-    prompt += (
+    prompt += (+-      
         f"\nSCHEDULE: Monday | [subjects] | [hours] | [specific task]\n"
         f"SCHEDULE: Tuesday | [subjects] | [hours] | [specific task]\n"
         f"SCHEDULE: Wednesday | [subjects] | [hours] | [specific task]\n"
@@ -598,7 +598,7 @@ def cgpa_planner():
         f"STRATEGY: [title] | [1 specific tactic]\n\n"
         f"MOTIVATION: [2-3 direct and energizing sentences]\n"
     )
-
++
     try:
         reply = ask_raai([{"role": "user", "content": prompt}], uid, max_tokens=2048)
         return jsonify({"reply": reply})
