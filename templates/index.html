@@ -77,15 +77,27 @@ body {
   position:relative;z-index:100;
   box-shadow:0 2px 12px var(--shadow);
 }
-.topbar-logo{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .topbar-bolt{
-  width:32px;height:32px;border-radius:10px;
-  background:linear-gradient(135deg,#c49a6c,#6b4c22);
-  display:flex;align-items:center;justify-content:center;font-size:16px;
-  box-shadow:0 4px 14px var(--gold-g);
-  animation:bolt-p 3s ease-in-out infinite;
+  width:34px;height:34px;border-radius:9px;
+  background:var(--card);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 8px var(--shadow);
+  animation:logo-glow-pulse 3s ease-in-out infinite alternate;
+  overflow:hidden;
+  transition:all 0.3s ease;
 }
-@keyframes bolt-p{0%,100%{box-shadow:0 4px 14px var(--gold-g)}50%{box-shadow:0 4px 22px var(--gold-g)}}
+.topbar-bolt img {
+  width:24px;height:24px;
+  mix-blend-mode:multiply;
+  transition:transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.topbar-logo:hover .topbar-bolt img {
+  transform:rotate(360deg);
+}
+@keyframes logo-glow-pulse{
+  0%{box-shadow:0 3px 8px var(--shadow);border-color:var(--border2)}
+  100%{box-shadow:0 4px 16px var(--gold-g);border-color:var(--accent)}
+}
 .topbar-name{
   font-size:16px;font-weight:800;letter-spacing:2px;color:var(--gold2);
 }
@@ -236,8 +248,9 @@ body {
 
 /* ── PAGE CONTAINER ─────────── */
 .page-container{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;}
-.page{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;}
+.page{display:none;flex:1;flex-direction:column;min-height:0;animation:page-in 0.5s cubic-bezier(0.16,1,0.3,1) both;}
 .page.active{display:flex;}
+@keyframes page-in{0%{opacity:0;transform:translateY(15px) scale(0.99);}100%{opacity:1;transform:translateY(0) scale(1);}}
 #page-chat{display:none;flex-direction:column;flex:1;min-height:0;}
 #page-chat.active{display:flex;}
 
@@ -277,8 +290,8 @@ body {
 .send-btn:active{transform:scale(0.95)}
 
 /* ── MESSAGES ───────────────── */
-.message{display:flex;flex-direction:column;gap:4px;animation:msg-in 0.25s ease;}
-@keyframes msg-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.message{display:flex;flex-direction:column;gap:4px;animation:msg-in 0.45s cubic-bezier(0.16, 1, 0.3, 1);}
+@keyframes msg-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .message.user{align-items:flex-end}
 .message.bot{align-items:flex-start}
 .msg-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-mid);text-transform:uppercase;padding:0 4px}
@@ -313,13 +326,30 @@ body {
   text-align:center;padding:40px 20px;gap:14px;
 }
 .zeus-avatar{
-  width:88px;height:88px;border-radius:50%;
-  background:linear-gradient(145deg,var(--accent),var(--gold2));
-  display:flex;align-items:center;justify-content:center;font-size:38px;
-  box-shadow:0 8px 28px var(--gold-g);
-  animation:av-f 3s ease-in-out infinite alternate;
+  width:96px;height:96px;border-radius:50%;
+  background:var(--card);
+  border:2px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 8px 30px var(--shadow), 0 0 0 1px rgba(255,255,255,0.6) inset;
+  animation:av-f 4s ease-in-out infinite alternate;
+  position:relative;
+  overflow:hidden;
+  transition:all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-@keyframes av-f{from{box-shadow:0 8px 22px var(--gold-g)}to{box-shadow:0 8px 36px var(--gold-g)}}
+.zeus-avatar img {
+  width:72px;height:72px;
+  mix-blend-mode:multiply;
+  transition:transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.zeus-avatar:hover {
+  transform:scale(1.05);
+  box-shadow:0 12px 36px var(--gold-g), 0 0 0 1px rgba(255,255,255,0.8) inset;
+  border-color:var(--accent);
+}
+.zeus-avatar:hover img {
+  transform:rotate(180deg) scale(1.05);
+}
+@keyframes av-f{0%{transform:translateY(0)}100%{transform:translateY(-8px)}}
 .welcome h2{font-size:26px;font-weight:800;color:var(--gold2);}
 .welcome p{font-size:13px;color:var(--text-mid);line-height:1.6;max-width:380px}
 .welcome-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px}
@@ -1106,7 +1136,8 @@ em{color:var(--teal);font-style:italic}
   .mob-bar{display:block}.topbar-tabs{display:none}
   .topbar{padding:0 14px;height:48px;min-height:48px}
   .topbar-tag{display:none}.topbar-name{font-size:14px}
-  .topbar-bolt{width:28px;height:28px;font-size:13px}
+  .topbar-bolt{width:28px;height:28px}
+  .topbar-bolt img{width:18px;height:18px}
   .raai-face-label{display:none}.chat-topbar{padding:6px 14px}
   .raai-emoji-face{width:44px;height:44px}
   .emoji-eyes{gap:8px;margin-top:5px}.emoji-eye{width:10px;height:10px}.emoji-pupil{width:5px;height:5px}
@@ -1127,12 +1158,61 @@ em{color:var(--teal);font-style:italic}
   .code-btns{grid-template-columns:1fr 1fr;gap:6px}.code-btn{font-size:11.5px;padding:9px 8px}
   .code-textarea{min-height:150px;font-size:12px;padding:12px}
   .page-title{font-size:17px}.page-sub{font-size:11px}
-  .zeus-avatar{width:68px;height:68px;font-size:30px}
+  .zeus-avatar{width:76px;height:76px}
+  .zeus-avatar img{width:56px;height:56px}
   .welcome h2{font-size:21px}.welcome p{font-size:12px}
   .welcome-chips{gap:5px;justify-content:center}.chip{font-size:11px;padding:5px 10px}
   .md-code{font-size:11px;padding:10px 12px}
 }
 @media(max-width:400px){.academic-grid{grid-template-columns:1fr}.code-btns{grid-template-columns:1fr}}
+
+/* --- GRADIENT INPUT BORDER GLOW --- */
+.chat-input {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.chat-input:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 16px rgba(160, 114, 74, 0.25);
+}
+
+/* --- CARD HOVER SHEEN & SCALE EFFECTS --- */
+.ac-card, .t-btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.ac-card::after, .t-btn::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -150%;
+  width: 50%; height: 100%;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.25), transparent);
+  transform: skewX(-25deg);
+  pointer-events: none;
+}
+.ac-card:hover::after, .t-btn:hover::after {
+  animation: card-sheen 1s ease-in-out forwards;
+}
+@keyframes card-sheen {
+  0% { left: -150%; }
+  100% { left: 150%; }
+}
+
+/* --- INTERACTIVE CANVAS --- */
+#particles-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+}
+.welcome {
+  position: relative;
+  z-index: 2;
+}
 
 </style>
 </head>
@@ -1145,7 +1225,7 @@ em{color:var(--teal);font-style:italic}
 <!-- TOP BAR -->
 <div class="topbar">
   <div class="topbar-logo">
-    <div class="topbar-bolt">⚡</div>
+    <div class="topbar-bolt"><img src="/static/logo.png" alt="logo"/></div>
     <div>
       <div class="topbar-name">Raai</div>
       <div class="topbar-tag">Academic OS · by Rahul</div>
@@ -1208,8 +1288,9 @@ em{color:var(--teal);font-style:italic}
     <div class="page active" id="page-chat">
       <div class="messages" id="messages">
         <div class="welcome" id="welcomeScreen">
-          <div class="zeus-avatar">⚡</div>
-          <h2>Hey! I'm Raai ⚡</h2>
+          <canvas id="particles-canvas"></canvas>
+          <div class="zeus-avatar"><img src="/static/logo.png" alt="Raai Logo" /></div>
+          <h2>Hey! I'm Raai</h2>
           <p>Your personal Academic AI built by Rahul.<br/>Chat, analyze code, generate exam questions & more!</p>
           <div class="welcome-chips">
             <span class="chip">💬 Chat</span>
@@ -1483,30 +1564,22 @@ function nowStr() {
 // ── Init ──────────────────────────────────────────────
 function init() {
   let chats = lsGetChats();
-  // Create first chat if none exist
-  if (!chats.length) {
-    const cid = genId();
-    chats = [{ id: cid, title: 'New Chat', created: nowStr(), messages: [] }];
-    lsSaveChats(chats);
-    lsSetActive(cid);
-  }
-  let activeId = lsGetActive();
-  if (!activeId || !chats.find(c => c.id === activeId)) {
-    activeId = chats[0].id;
-    lsSetActive(activeId);
-  }
-  activeChatId = activeId;
+  
+  // Cleanup any previously abandoned empty chats so they don't pile up
+  chats = chats.filter(c => c.messages && c.messages.length > 0);
+  
+  // Always create a fresh chat when the site loads
+  const cid = genId();
+  chats.unshift({ id: cid, title: 'New Chat', created: nowStr(), messages: [] });
+  lsSaveChats(chats);
+  lsSetActive(cid);
+  activeChatId = cid;
+  
   refreshChats();
-  // Load messages of active chat
-  const activeChat = chats.find(c => c.id === activeId);
-  if (activeChat && activeChat.messages.length) {
-    if (curTitleEl) curTitleEl.textContent = activeChat.title;
-    activeChat.messages.forEach(m => addMessage(m.role === 'user' ? 'user' : 'bot', m.content, false));
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  } else {
-    messagesEl.innerHTML = showWelcome();
-    if (curTitleEl) curTitleEl.textContent = 'New Chat';
-  }
+  
+  // Display the welcome screen for the new chat
+  messagesEl.innerHTML = showWelcome();
+  if (curTitleEl) curTitleEl.textContent = 'New Chat';
 }
 
 // ── Page switching ─────────────────────────────────────
@@ -1627,10 +1700,154 @@ function clearAcademicOutput() {
   if (bar) bar.classList.remove("visible");
 }
 
+let canvasAnimationId = null;
+
+function initWelcomeParticles() {
+  const canvas = document.getElementById("particles-canvas");
+  if (!canvas) return;
+  
+  if (canvasAnimationId) {
+    cancelAnimationFrame(canvasAnimationId);
+    canvasAnimationId = null;
+  }
+  
+  const ctx = canvas.getContext("2d");
+  
+  function resize() {
+    if (!canvas.parentElement) return;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+  }
+  resize();
+  window.removeEventListener("resize", resize);
+  window.addEventListener("resize", resize);
+  
+  const particles = [];
+  const particleCount = Math.min(35, Math.floor((canvas.width * canvas.height) / 14000));
+  const colors = ["rgba(139, 104, 72, 0.25)", "rgba(160, 114, 74, 0.3)", "rgba(200, 170, 130, 0.2)"];
+  
+  let mouse = { x: null, y: null, radius: 120 };
+  
+  const welcomeContainer = canvas.parentElement;
+  
+  function handleMouseMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+  }
+  
+  function handleMouseLeave() {
+    mouse.x = null;
+    mouse.y = null;
+  }
+  
+  welcomeContainer.removeEventListener("mousemove", handleMouseMove);
+  welcomeContainer.addEventListener("mousemove", handleMouseMove);
+  
+  welcomeContainer.removeEventListener("mouseleave", handleMouseLeave);
+  welcomeContainer.addEventListener("mouseleave", handleMouseLeave);
+  
+  class Particle {
+    constructor() {
+      this.x = Math.random() * canvas.width;
+      this.y = Math.random() * canvas.height;
+      this.vx = (Math.random() - 0.5) * 0.4;
+      this.vy = (Math.random() - 0.5) * 0.4;
+      this.radius = Math.random() * 2 + 1;
+      this.color = colors[Math.floor(Math.random() * colors.length)];
+    }
+    
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      
+      if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+      if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+      
+      if (mouse.x !== null && mouse.y !== null) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < mouse.radius) {
+          const force = (mouse.radius - dist) / mouse.radius;
+          this.x += (dx / dist) * force * 0.5;
+          this.y += (dy / dist) * force * 0.5;
+        }
+      }
+    }
+    
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.fill();
+    }
+  }
+  
+  for (let i = 0; i < particleCount; i++) {
+    particles.push(new Particle());
+  }
+  
+  function animate() {
+    if (!document.getElementById("particles-canvas")) {
+      canvasAnimationId = null;
+      return;
+    }
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    particles.forEach(p => {
+      p.update();
+      p.draw();
+    });
+    
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist < 110) {
+          const alpha = (110 - dist) / 110 * 0.12;
+          ctx.strokeStyle = `rgba(139, 104, 72, ${alpha})`;
+          ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+        }
+      }
+      
+      if (mouse.x !== null && mouse.y !== null) {
+        const dx = particles[i].x - mouse.x;
+        const dy = particles[i].y - mouse.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < mouse.radius) {
+          const alpha = (mouse.radius - dist) / mouse.radius * 0.2;
+          ctx.strokeStyle = `rgba(160, 114, 74, ${alpha})`;
+          ctx.lineWidth = 0.9;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(mouse.x, mouse.y);
+          ctx.stroke();
+        }
+      }
+    }
+    
+    canvasAnimationId = requestAnimationFrame(animate);
+  }
+  animate();
+}
+
 function showWelcome() {
+  setTimeout(() => {
+    initWelcomeParticles();
+  }, 40);
   return `<div class="welcome" id="welcomeScreen">
-    <div class="zeus-avatar">⚡</div>
-    <h2>Hey! I'm Raai ⚡</h2>
+    <canvas id="particles-canvas"></canvas>
+    <div class="zeus-avatar"><img src="/static/logo.png" alt="Raai Logo" /></div>
+    <h2>Hey! I'm Raai</h2>
     <p>Start typing, upload a document, or pick an Academic Tool!</p>
     <div class="welcome-chips">
       <span class="chip">💬 Chat</span><span class="chip">📄 Summarize</span>
