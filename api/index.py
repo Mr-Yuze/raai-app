@@ -179,9 +179,9 @@ def chat():
         context = [
             {"role": "user",      "content": f"I have uploaded this document for reference:\n\n---\n{file_text[:4000]}\n---\nPlease use it to answer my questions."},
             {"role": "assistant", "content": "Got it bro! I've read the full document and I'm ready to help with anything about it."}
-        ] + history
+        ] + history + [{"role": "user", "content": msg}]
     else:
-        context = history
+        context = history + [{"role": "user", "content": msg}]
 
     try:
         reply = ask_raai(context, profile)
