@@ -1764,10 +1764,17 @@ function showTyping(show) {
   if (show) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+let isWaitingForReply = false;
+
 async function sendMessage() {
+  if (isWaitingForReply) return;
   const msg = inputEl.value.trim();
   if (!msg) return;
+  
+  isWaitingForReply = true;
   inputEl.value = ""; inputEl.style.height = "auto";
+  inputEl.placeholder = "Raai is thinking...";
+  inputEl.disabled = true;
 
   // Save user message to localStorage
   let chats = lsGetChats();
@@ -1800,17 +1807,25 @@ async function sendMessage() {
     const data = await res.json();
     showTyping(false);
     if (window.setFaceThinking) setFaceThinking(false);
-    addMessage("bot", data.reply);
+    
+    // In case the API returns an empty reply
+    const finalReply = data.reply || "⚠️ Got an empty response from the server bro!";
+    addMessage("bot", finalReply);
 
     // Save bot reply to localStorage
     chats = lsGetChats();
     chat  = chats.find(c => c.id === activeChatId);
-    if (chat) { chat.messages.push({ role: 'assistant', content: data.reply }); lsSaveChats(chats); }
+    if (chat) { chat.messages.push({ role: 'assistant', content: finalReply }); lsSaveChats(chats); }
     refreshChats();
   } catch(e) {
     showTyping(false);
     if (window.setFaceThinking) setFaceThinking(false);
     addMessage("bot","❌ Can't reach the server bro!");
+  } finally {
+    isWaitingForReply = false;
+    inputEl.disabled = false;
+    inputEl.placeholder = "Message Raai... (Shift+Enter for newline)";
+    inputEl.focus();
   }
 }
 
