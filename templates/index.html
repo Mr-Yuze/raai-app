@@ -155,7 +155,8 @@ body {
   animation:ci-in 0.25s ease;
 }
 @keyframes ci-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
-.ci:hover{background:rgba(60,179,113,0.1);border-color:var(--border2)}
+.ci:hover{background:rgba(60,179,113,0.1);border-color:var(--border2);transform:translateX(4px)}
+.ci:active{transform:scale(0.96) translateX(2px)}
 .ci.active{background:rgba(46,139,46,0.12);border-color:rgba(46,139,46,0.3)}
 .ci.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
 .ci-icon{font-size:14px;margin-top:1px;flex-shrink:0}
@@ -767,6 +768,7 @@ em{color:var(--teal);font-style:italic}
 .tc-badge.space{background:rgba(96,165,250,0.12);color:#1d4ed8;border:1.5px solid rgba(96,165,250,0.3)}
 
 /* Loop depth visualizer */
+
 .tc-loops{display:flex;flex-direction:column;gap:7px}
 .tc-loop{
   display:flex;align-items:center;gap:10px;
@@ -1700,6 +1702,51 @@ function clearAcademicOutput() {
   if (bar) bar.classList.remove("visible");
 }
 
+function setFaceThinking(isThinking) {
+  const fw = document.getElementById("raaiFaceWrap");
+  const face = document.getElementById("raaiface");
+  const shape = document.getElementById("raaiMouthShape");
+  const dots = document.getElementById("raaiThinkDots");
+  const st = document.getElementById("raaiFaceStatus");
+  if (!fw || !face) return;
+  
+  if (isThinking) {
+    fw.classList.remove("typing-active");
+    fw.classList.add("thinking-active");
+    face.classList.remove("typing");
+    face.classList.add("thinking");
+    shape.className = "emoji-mouth-shape flat";
+    dots.classList.add("visible");
+    st.textContent = "Thinking...";
+  } else {
+    fw.classList.remove("thinking-active");
+    fw.classList.remove("typing-active");
+    face.classList.remove("thinking");
+    face.classList.remove("typing");
+    shape.className = "emoji-mouth-shape idle";
+    dots.classList.remove("visible");
+    st.textContent = "Ready to help ⚡";
+  }
+}
+
+// ── Interactive Face Pupil Tracking ────────────────────
+document.addEventListener("mousemove", (e) => {
+  const pupils = document.querySelectorAll('.emoji-pupil');
+  pupils.forEach(pupil => {
+    const eye = pupil.parentElement;
+    const rect = eye.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    const dist = Math.min(2.5, Math.sqrt(dx*dx + dy*dy) * 0.05);
+    const angle = Math.atan2(dy, dx);
+    const tx = Math.cos(angle) * dist;
+    const ty = Math.sin(angle) * dist;
+    pupil.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
+  });
+});
+
 let canvasAnimationId = null;
 
 function initWelcomeParticles() {
@@ -1982,6 +2029,7 @@ function showTyping(show) {
 }
 
 let isWaitingForReply = false;
+let typingInterval;
 
 async function sendMessage() {
   if (isWaitingForReply) return;
@@ -1990,8 +2038,14 @@ async function sendMessage() {
   
   isWaitingForReply = true;
   inputEl.value = ""; inputEl.style.height = "auto";
-  inputEl.placeholder = "Raai is thinking...";
   inputEl.disabled = true;
+  
+  let dotCount = 0;
+  inputEl.placeholder = "Raai is thinking";
+  typingInterval = setInterval(() => {
+    dotCount = (dotCount + 1) % 4;
+    inputEl.placeholder = "Raai is thinking" + ".".repeat(dotCount);
+  }, 400);
 
   // Save user message to localStorage
   let chats = lsGetChats();
@@ -2040,6 +2094,7 @@ async function sendMessage() {
     addMessage("bot","❌ Can't reach the server bro!");
   } finally {
     isWaitingForReply = false;
+    clearInterval(typingInterval);
     inputEl.disabled = false;
     inputEl.placeholder = "Message Raai... (Shift+Enter for newline)";
     inputEl.focus();
