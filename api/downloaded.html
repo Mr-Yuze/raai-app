@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -3105,7 +3105,8 @@ async function runQPGenerator() {
 }
 
 function parseQP(raw) {
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = raw.split('
+').map(l => l.trim()).filter(Boolean);
   const get = (key) => { const l = lines.find(l => l.toUpperCase().startsWith(key.toUpperCase() + ':')); return l ? l.replace(new RegExp('^' + key + ':\s*', 'i'), '').trim() : ''; };
   const getAll = (key) => lines.filter(l => l.toUpperCase().startsWith(key.toUpperCase() + ':')).map(l => l.replace(new RegExp('^' + key + ':\s*', 'i'), '').trim());
   return {
