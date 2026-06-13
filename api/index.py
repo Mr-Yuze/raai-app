@@ -14,7 +14,11 @@ app = Flask(__name__, template_folder="../templates", static_folder="../static")
 app.secret_key = os.environ.get("SECRET_KEY", "raai-academic-os-2024")
 
 # ── Groq Client ────────────────────────────────────────
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+# Use a dummy key if missing to prevent Vercel 500 crash on startup
+api_key = os.environ.get("GROQ_API_KEY")
+if not api_key:
+    api_key = "gsk_missing_api_key_please_set_in_vercel"
+client = Groq(api_key=api_key)
 MODEL  = "llama-3.3-70b-versatile"
 
 # ── In-memory file store (per-session, within one request cycle) ───
