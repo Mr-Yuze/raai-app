@@ -1,34 +1,31 @@
 from flask import Flask, render_template, request, jsonify, session
 from groq import Groq
 import os
-import uuid
 import json
 import re
-from datetime import datetime
 
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
 app.secret_key = os.environ.get("SECRET_KEY", "raai-academic-os-2024")
 
 # ── Groq Client ────────────────────────────────────────
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-MODEL  = "llama-3.3-70b-versatile"   # fast + smart on Groq free tier
+MODEL  = "llama-3.3-70b-versatile"
 
-# ── In-memory stores ───────────────────────────────────
-# NOTE: On Vercel (serverless), these are reset between cold starts.
-# For persistent data, use a database like Vercel KV or Redis.
-all_chats     = {}   # uid -> { cid -> {title, messages, created} }
-file_contents = {}   # uid_cid -> text
-user_profiles = {}   # uid -> { name, dept, year, cgpa, weak_areas, learning_style }
+# ── In-memory file store (per-session, within one request cycle) ───
+# NOTE: On Vercel serverless, this is shared within the same instance
+# for the lifetime of a request. File uploads work within a session.
+file_contents = {}   # session_key -> text
 
 # ── System Prompt ──────────────────────────────────────
-def build_system_prompt(uid):
-    profile = user_profiles.get(uid, {})
-    name    = profile.get("name", "Student")
-    dept    = profile.get("dept", "")
-    year    = profile.get("year", "")
-    cgpa    = profile.get("cgpa", "")
-    weak    = ", ".join(profile.get("weak_areas", [])) or "none tracked yet"
-    style   = profile.get("learning_style", "balanced")
+def build_system_prompt(profile=None):
+    if not profile:
+        profile = {}
+    name  = profile.get("name", "Student")
+    dept  = profile.get("dept", "")
+    year  = profile.get("year", "")
+    cgpa  = profile.get("cgpa", "")
+    weak  = ", ".join(profile.get("weak_areas", [])) or "none tracked yet"
+    style = profile.get("learning_style", "balanced")
 
     return {
         "role": "system",
@@ -48,11 +45,11 @@ def build_system_prompt(uid):
             f"\n\nTone & Personality:"
             f"\n- You're like a smart, warm senior friend who genuinely wants the student to succeed."
             f"\n- Sound natural and conversational — not robotic, not overly formal."
-            f"\n- Use casual phrases like 'got it', 'makes sense', 'here's the thing', 'no worries', 'yeah' when they fit naturally — but don't force them or repeat the same ones."
+            f"\n- Use casual phrases like 'got it', 'makes sense', 'here's the thing', 'no worries', 'yeah' when they fit naturally."
             f"\n- Be encouraging and positive, especially when a student is struggling."
             f"\n- Keep responses concise and clear unless the topic genuinely needs depth."
             f"\n- For academic content, be thorough, structured, and exam-focused."
-            f"\n- Tailor explanations to the student's department and year — don't over-explain to advanced students."
+            f"\n- Tailor explanations to the student's department and year."
             f"\n- Use proper markdown: **bold** for key terms, ## for section headers, bullet points for lists."
             f"\n\nBoundaries:"
             f"\n- Never use profanity or offensive language under any circumstances."
@@ -61,11 +58,8 @@ def build_system_prompt(uid):
         )
     }
 
-def ask_raai(messages, uid=None, max_tokens=2048, temperature=0.7):
-    sys_prompt = build_system_prompt(uid) if uid else {
-        "role": "system",
-        "content": "You are Raai, an Academic AI built by Rahul. Be friendly, casual and helpful. Use markdown formatting."
-    }
+def ask_raai(messages, profile=None, max_tokens=2048, temperature=0.7):
+    sys_prompt = build_system_prompt(profile)
     response = client.chat.completions.create(
         model=MODEL,
         messages=[sys_prompt] + messages,
@@ -81,7 +75,6 @@ def read_file(file):
         return file.read().decode("utf-8", errors="ignore")
     elif ext == ".pdf":
         try:
-            # PyMuPDF (fitz) is not available on Vercel; use pypdf as fallback
             import pypdf
             from io import BytesIO
             reader = pypdf.PdfReader(BytesIO(file.read()))
@@ -100,120 +93,14 @@ def read_file(file):
         return file.read().decode("utf-8", errors="ignore")
     return None
 
-# ── Session helpers ────────────────────────────────────
-def get_uid():
-    if "uid" not in session:
-        session["uid"] = str(uuid.uuid4())
-    return session["uid"]
-
-def get_user_chats(uid):
-    if uid not in all_chats:
-        all_chats[uid] = {}
-    return all_chats[uid]
-
-def create_new_chat(uid):
-    chats = get_user_chats(uid)
-    cid   = str(uuid.uuid4())
-    chats[cid] = {
-        "title":    "New Chat",
-        "messages": [],
-        "created":  datetime.now().strftime("%b %d, %H:%M")
-    }
-    session["active_chat"] = cid
-    return cid, chats[cid]
-
-def get_active_chat(uid):
-    chats = get_user_chats(uid)
-    cid   = session.get("active_chat")
-    if cid and cid in chats:
-        return cid, chats[cid]
-    return create_new_chat(uid)
-
-# ══════════════════════════════════════════════════════
-# ── ROUTES ────────────────────────────────────────────
-# ══════════════════════════════════════════════════════
-
-@app.route("/")
-def index():
-    uid = get_uid()
-    create_new_chat(uid)
-    return render_template("index.html")
-
-# ── Profile ────────────────────────────────────────────
-@app.route("/profile", methods=["GET"])
-def get_profile():
-    uid = get_uid()
-    return jsonify(user_profiles.get(uid, {}))
-
-@app.route("/profile", methods=["POST"])
-def save_profile():
-    uid  = get_uid()
-    data = request.json or {}
-    if uid not in user_profiles:
-        user_profiles[uid] = {"weak_areas": [], "mood_history": []}
-    user_profiles[uid].update({
-        "name":           data.get("name", ""),
-        "dept":           data.get("dept", ""),
-        "year":           data.get("year", ""),
-        "cgpa":           data.get("cgpa", ""),
-        "learning_style": data.get("learning_style", "balanced"),
-    })
-    return jsonify({"success": True})
-
-# ── Chat history ───────────────────────────────────────
-@app.route("/chats", methods=["GET"])
-def get_chats():
-    uid    = get_uid()
-    chats  = get_user_chats(uid)
-    active = session.get("active_chat")
-    if not chats:
-        active, _ = create_new_chat(uid)
-    result = []
-    for cid, chat in chats.items():
-        msgs = [m for m in chat["messages"] if m["role"] != "system"]
-        result.append({
-            "id":      cid,
-            "title":   chat["title"],
-            "created": chat["created"],
-            "active":  cid == active,
-            "preview": msgs[-1]["content"][:45] + "..." if msgs else "No messages yet"
-        })
-    result.sort(key=lambda x: x["created"], reverse=True)
-    return jsonify({"chats": result, "active": active})
-
-@app.route("/chats/new", methods=["POST"])
-def new_chat():
-    uid = get_uid()
-    cid, _ = create_new_chat(uid)
-    return jsonify({"success": True, "chat_id": cid})
-
-@app.route("/chats/switch", methods=["POST"])
-def switch_chat():
-    uid   = get_uid()
-    cid   = request.json.get("chat_id")
-    chats = get_user_chats(uid)
-    if cid in chats:
-        session["active_chat"] = cid
-        chat = chats[cid]
-        msgs = [m for m in chat["messages"] if m["role"] != "system"]
-        return jsonify({"success": True, "messages": msgs, "title": chat["title"]})
-    return jsonify({"success": False})
-
-@app.route("/chats/delete", methods=["POST"])
-def delete_chat():
-    uid   = get_uid()
-    cid   = request.json.get("chat_id")
-    chats = get_user_chats(uid)
-    if cid in chats:
-        del chats[cid]
-        file_contents.pop(f"{uid}_{cid}", None)
-        if chats:
-            new_active = list(chats.keys())[-1]
-            session["active_chat"] = new_active
-        else:
-            new_active, _ = create_new_chat(uid)
-        return jsonify({"success": True, "new_active": session.get("active_chat")})
-    return jsonify({"success": False})
+# ── Session key helper ─────────────────────────────────
+def get_session_key():
+    """Return a per-session+chat key for file storage."""
+    if "session_id" not in session:
+        import uuid
+        session["session_id"] = str(uuid.uuid4())
+    chat_id = request.json.get("chat_id", "default") if request.is_json else request.form.get("chat_id", "default")
+    return f"{session['session_id']}_{chat_id}"
 
 # ── Profanity Filter ───────────────────────────────────
 BAD_WORDS = [
@@ -249,12 +136,22 @@ def censor_text(text):
         result = pattern.sub(stars, result)
     return result
 
-# ── Core Chat ──────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+# ── ROUTES ────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+# ── Core Chat (STATELESS — client sends full history) ──
 @app.route("/chat", methods=["POST"])
 def chat():
-    uid  = get_uid()
-    data = request.json or {}
-    msg  = data.get("message", "").strip()
+    data     = request.json or {}
+    msg      = data.get("message", "").strip()
+    history  = data.get("messages", [])   # full history from localStorage
+    profile  = data.get("profile", {})
+    chat_id  = data.get("chat_id", "default")
     display_msg = data.get("display_message", msg)
 
     if not msg:
@@ -263,17 +160,11 @@ def chat():
     if contains_bad_word(msg):
         return jsonify({
             "reply": "⚠️ Hey bro, let's keep it clean! I'm here to help you study — please use respectful language 🙏",
-            "title": None
         })
 
-    cid, chat_data = get_active_chat(uid)
-    history = chat_data["messages"]
-    history.append({"role": "user", "content": msg})
-
-    if len(history) == 1:
-        chat_data["title"] = (display_msg or msg)[:32] + ("..." if len(display_msg or msg) > 32 else "")
-
-    file_text = file_contents.get(f"{uid}_{cid}", "")
+    # Attach uploaded file context if any
+    file_key = f"{session.get('session_id','anon')}_{chat_id}"
+    file_text = file_contents.get(file_key, "")
     if file_text:
         context = [
             {"role": "user",      "content": f"I have uploaded this document for reference:\n\n---\n{file_text[:4000]}\n---\nPlease use it to answer my questions."},
@@ -283,45 +174,20 @@ def chat():
         context = history
 
     try:
-        reply = ask_raai(context, uid)
+        reply = ask_raai(context, profile)
         reply = censor_text(reply)
-        history.append({"role": "assistant", "content": reply})
-
-        weak_keywords = ["don't understand", "confused", "hard", "difficult", "struggling", "not getting"]
-        if any(kw in msg.lower() for kw in weak_keywords):
-            profile = user_profiles.setdefault(uid, {"weak_areas": [], "mood_history": []})
-            topic = msg[:40]
-            if topic not in profile.get("weak_areas", []):
-                profile.setdefault("weak_areas", []).append(topic)
-
-        return jsonify({"reply": reply, "title": chat_data["title"]})
+        return jsonify({"reply": reply})
     except Exception as e:
-        history.pop()
         return jsonify({"reply": f"❌ Error: {e}"})
-
-# ── Save academic note ─────────────────────────────────
-@app.route("/chat/save-note", methods=["POST"])
-def save_note():
-    uid  = get_uid()
-    data = request.json or {}
-    content = data.get("content", "").strip()
-    if not content:
-        return jsonify({"success": False})
-
-    cid, chat_data = get_active_chat(uid)
-    history = chat_data["messages"]
-    history.append({"role": "assistant", "content": f"[Academic Tool Result]\n{content}"})
-
-    if chat_data["title"] == "New Chat":
-        chat_data["title"] = "Academic: " + content[:28] + "..."
-
-    return jsonify({"success": True})
 
 # ── File upload ────────────────────────────────────────
 @app.route("/upload", methods=["POST"])
 def upload():
-    uid = get_uid()
-    cid, _ = get_active_chat(uid)
+    if "session_id" not in session:
+        import uuid
+        session["session_id"] = str(uuid.uuid4())
+    chat_id = request.form.get("chat_id", "default")
+    file_key = f"{session['session_id']}_{chat_id}"
     try:
         if "file" not in request.files or request.files["file"].filename == "":
             return jsonify({"success": False, "message": "No file selected."})
@@ -329,31 +195,47 @@ def upload():
         content = read_file(file)
         if content is None:
             return jsonify({"success": False, "message": "Unsupported file type."})
-        file_contents[f"{uid}_{cid}"] = content
+        file_contents[file_key] = content
         return jsonify({"success": True, "filename": file.filename, "word_count": len(content.split())})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
+@app.route("/clear-file", methods=["POST"])
+def clear_file():
+    if "session_id" not in session:
+        return jsonify({"success": True})
+    data = request.json or {}
+    chat_id = data.get("chat_id", "default")
+    file_key = f"{session['session_id']}_{chat_id}"
+    file_contents.pop(file_key, None)
+    return jsonify({"success": True})
+
+# ── Helper: get file text ──────────────────────────────
+def get_file_text(chat_id="default"):
+    file_key = f"{session.get('session_id','anon')}_{chat_id}"
+    return file_contents.get(file_key, "")
+
 # ── Academic Tools ─────────────────────────────────────
 @app.route("/academic/get-topic", methods=["POST"])
 def get_topic():
-    uid = get_uid()
-    cid, _ = get_active_chat(uid)
-    text = file_contents.get(f"{uid}_{cid}", "")
+    data = request.json or {}
+    chat_id = data.get("chat_id", "default")
+    text = get_file_text(chat_id)
     if not text:
         return jsonify({"topic": "general university subject"})
     try:
-        topic = ask_raai([{"role": "user", "content": f"In 5-10 words, what is the main subject/topic of this document? Reply with ONLY the topic name, nothing else.\n\n{text[:1000]}"}], uid, max_tokens=50)
+        topic = ask_raai([{"role": "user", "content": f"In 5-10 words, what is the main subject/topic of this document? Reply with ONLY the topic name, nothing else.\n\n{text[:1000]}"}], max_tokens=50)
         return jsonify({"topic": topic.strip()})
     except:
         return jsonify({"topic": "the uploaded subject"})
 
 @app.route("/academic/exam-questions", methods=["POST"])
 def exam_questions():
-    uid   = get_uid()
-    cid, _ = get_active_chat(uid)
-    text  = file_contents.get(f"{uid}_{cid}", "")
-    qtype = request.json.get("type", "2mark")
+    data   = request.json or {}
+    chat_id = data.get("chat_id", "default")
+    text   = get_file_text(chat_id)
+    qtype  = data.get("type", "2mark")
+    profile = data.get("profile", {})
 
     if not text:
         return jsonify({"reply": "⚠️ Upload a document first bro!"})
@@ -427,12 +309,12 @@ Document:
 {text[:4000]}""",
     }
 
-    prompt     = prompts.get(qtype, prompts["2mark"])
+    prompt      = prompts.get(qtype, prompts["2mark"])
     token_limit = 4096 if qtype == "16mark" else 2048
     temp        = 0.95 if qtype == "flashcards" else 0.7
 
     try:
-        reply = ask_raai([{"role": "user", "content": prompt}], uid, max_tokens=token_limit, temperature=temp)
+        reply = ask_raai([{"role": "user", "content": prompt}], profile, max_tokens=token_limit, temperature=temp)
 
         if qtype == "flashcards":
             cards = []
@@ -486,9 +368,10 @@ Document:
 
 @app.route("/academic/code-analyze", methods=["POST"])
 def code_analyze():
-    uid  = get_uid()
-    code = request.json.get("code", "").strip()
-    mode = request.json.get("mode", "explain")
+    data    = request.json or {}
+    code    = data.get("code", "").strip()
+    mode    = data.get("mode", "explain")
+    profile = data.get("profile", {})
 
     if not code:
         return jsonify({"reply": "⚠️ Paste some code first bro!"})
@@ -557,20 +440,20 @@ Code:
 
     prompt = prompts.get(mode, prompts["explain"])
     try:
-        reply = ask_raai([{"role": "user", "content": prompt}], uid, max_tokens=3000)
+        reply = ask_raai([{"role": "user", "content": prompt}], profile, max_tokens=3000)
         return jsonify({"reply": reply, "mode": mode})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}"})
 
 @app.route("/academic/cgpa-planner", methods=["POST"])
 def cgpa_planner():
-    uid  = get_uid()
-    data = request.json or {}
-    current  = data.get("current_cgpa", "")
-    target   = data.get("target_cgpa", "")
-    credits  = data.get("remaining_credits", "")
+    data    = request.json or {}
+    profile = data.get("profile", {})
+    current = data.get("current_cgpa", "")
+    target  = data.get("target_cgpa", "")
+    credits = data.get("remaining_credits", "")
     subject_details = data.get("subject_details", [])
-    req_pct  = data.get("req_grade_pct", "")
+    req_pct = data.get("req_grade_pct", "")
 
     subj_block = "\n".join([f"- {s['name']}: {s['credits']} credits, {s['priority']} priority" for s in subject_details]) if subject_details else data.get("subjects", "")
 
@@ -585,11 +468,9 @@ def cgpa_planner():
         f"STAT: Min Score Needed | {req_pct}% in every exam\n"
         f"STAT: Daily Study Hours | [specific hours needed]\n\n"
     )
-
     for s in subject_details:
         hrs = "3+ hrs/day" if s['priority']=='High' else ("2 hrs/day" if s['priority']=='Medium' else "1 hr/day")
         prompt += f"SUBJECT: {s['name']} | {req_pct}% target | {s['priority']} | {hrs} | [2-3 specific study actions]\n"
-
     prompt += (
         f"\nSCHEDULE: Monday | [subjects] | [hours] | [specific task]\n"
         f"SCHEDULE: Tuesday | [subjects] | [hours] | [specific task]\n"
@@ -603,17 +484,16 @@ def cgpa_planner():
         f"STRATEGY: [title] | [1 specific tactic]\n\n"
         f"MOTIVATION: [2-3 direct and energizing sentences]\n"
     )
-
     try:
-        reply = ask_raai([{"role": "user", "content": prompt}], uid, max_tokens=2048)
+        reply = ask_raai([{"role": "user", "content": prompt}], profile, max_tokens=2048)
         return jsonify({"reply": reply})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}"})
 
 @app.route("/academic/attendance", methods=["POST"])
 def attendance_risk():
-    uid  = get_uid()
-    data = request.json or {}
+    data      = request.json or {}
+    profile   = data.get("profile", {})
     total     = int(data.get("total_classes", 0))
     attended  = int(data.get("attended", 0))
     remaining = int(data.get("remaining", 0))
@@ -642,36 +522,32 @@ def attendance_risk():
         f"Give a brief, friendly, motivating advice message. Use **bold** for key numbers."
     )
     try:
-        advice = ask_raai([{"role": "user", "content": prompt}], uid)
+        advice = ask_raai([{"role": "user", "content": prompt}], profile)
         return jsonify({"reply": advice, "current_pct": round(current_pct, 1), "status": status, "needed": needed, "can_miss": can_miss, "msg": msg})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}"})
 
 @app.route("/summarize", methods=["POST"])
 def summarize():
-    uid = get_uid()
-    cid, _ = get_active_chat(uid)
-    text = file_contents.get(f"{uid}_{cid}", "")
+    data    = request.json or {}
+    chat_id = data.get("chat_id", "default")
+    profile = data.get("profile", {})
+    text    = get_file_text(chat_id)
     if not text:
         return jsonify({"reply": "⚠️ No file loaded! Upload a file first bro."})
     try:
-        reply = ask_raai([{"role": "user", "content": f"Summarize this document clearly and concisely. Use ## for section headers and **bold** for key points:\n\n{text[:4000]}"}], uid)
+        reply = ask_raai([{"role": "user", "content": f"Summarize this document clearly and concisely. Use ## for section headers and **bold** for key points:\n\n{text[:4000]}"}], profile)
         return jsonify({"reply": reply})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}"})
 
 @app.route("/translate", methods=["POST"])
 def translate():
-    uid = get_uid()
-    cid, _ = get_active_chat(uid)
-    text = file_contents.get(f"{uid}_{cid}", "")
-    language = ""
-    try:
-        data = request.get_json(silent=True)
-        if data:
-            language = data.get("language", "").strip()
-    except Exception:
-        pass
+    data     = request.get_json(silent=True) or {}
+    chat_id  = data.get("chat_id", "default")
+    profile  = data.get("profile", {})
+    language = data.get("language", "").strip()
+    text     = get_file_text(chat_id)
     if not text:
         return jsonify({"reply": "⚠️ No file loaded! Upload a file first bro."})
     if not language:
@@ -681,27 +557,19 @@ def translate():
         chunks = [text[i:i+chunk_size] for i in range(0, min(len(text), 12000), chunk_size)]
         translated_parts = []
         for chunk in chunks:
-            part = ask_raai([{"role": "user", "content": f"Translate the following text to {language}. Only provide the translation, nothing else:\n\n{chunk}"}], uid)
+            part = ask_raai([{"role": "user", "content": f"Translate the following text to {language}. Only provide the translation, nothing else:\n\n{chunk}"}], profile)
             translated_parts.append(part)
         return jsonify({"reply": "\n\n".join(translated_parts)})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}"})
 
-@app.route("/clear-file", methods=["POST"])
-def clear_file():
-    uid = get_uid()
-    cid, _ = get_active_chat(uid)
-    file_contents.pop(f"{uid}_{cid}", None)
-    return jsonify({"success": True})
-
-
 # ── Question Paper Generator ───────────────────────────
 @app.route("/academic/generate-qp", methods=["POST"])
 def generate_qp():
-    uid  = get_uid()
-    cid, _ = get_active_chat(uid)
-    text = file_contents.get(f"{uid}_{cid}", "")
-    data = request.json or {}
+    data    = request.json or {}
+    chat_id = data.get("chat_id", "default")
+    profile = data.get("profile", {})
+    text    = get_file_text(chat_id)
     subject = data.get("subject", "").strip()
     dept    = data.get("dept", "").strip()
     exam    = data.get("exam", "End Semester Examination")
@@ -759,8 +627,9 @@ PART_B_INSTRUCTIONS: Answer ALL questions. Each question has two parts (a) and (
 Make questions from: {text[:4000]}"""
 
     try:
-        reply = ask_raai([{"role": "user", "content": prompt}], uid, max_tokens=3000, temperature=0.7)
-        file_contents[f"{uid}_{cid}_qp"] = reply
+        reply = ask_raai([{"role": "user", "content": prompt}], profile, max_tokens=3000, temperature=0.7)
+        # Store QP in file_contents so answer key can use it
+        file_contents[f"{session.get('session_id','anon')}_{chat_id}_qp"] = reply
         return jsonify({"reply": reply, "success": True})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}", "success": False})
@@ -768,10 +637,11 @@ Make questions from: {text[:4000]}"""
 # ── Answer Key Generator ───────────────────────────────
 @app.route("/academic/answer-key", methods=["POST"])
 def answer_key():
-    uid  = get_uid()
-    cid, _ = get_active_chat(uid)
-    text = file_contents.get(f"{uid}_{cid}", "")
-    qp_text = file_contents.get(f"{uid}_{cid}_qp", "")
+    data    = request.json or {}
+    chat_id = data.get("chat_id", "default")
+    profile = data.get("profile", {})
+    text    = get_file_text(chat_id)
+    qp_text = file_contents.get(f"{session.get('session_id','anon')}_{chat_id}_qp", "")
 
     if not qp_text:
         return jsonify({"reply": "⚠️ Generate a Question Paper first using the QP Generator, then come back for the answer key!"})
@@ -813,13 +683,13 @@ AK_16M_Q5A: [Detailed answer]
 AK_16M_Q5B: [Detailed answer]"""
 
     try:
-        reply = ask_raai([{"role": "user", "content": prompt}], uid, max_tokens=4000, temperature=0.6)
+        reply = ask_raai([{"role": "user", "content": prompt}], profile, max_tokens=4000, temperature=0.6)
         return jsonify({"reply": reply, "success": True})
     except Exception as e:
         return jsonify({"reply": f"❌ Error: {e}", "success": False})
 
-# ── Vercel / local entry point ─────────────────────────
+# ── Entry point ────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"⚡ Raai Academic OS running at http://localhost:{port}")
+    print(f"Raai Academic OS running at http://localhost:{port}")
     app.run(debug=False, host="0.0.0.0", port=port)

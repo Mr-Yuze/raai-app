@@ -1452,15 +1452,60 @@ const fileInput   = document.getElementById("fileInput");
 const chatListEl  = document.getElementById("chatList");
 const curTitleEl  = document.getElementById("curTitle");
 
+// ── localStorage Chat Store ────────────────────────────
+const LS_CHATS   = 'raai_chats';
+const LS_ACTIVE  = 'raai_active_chat';
+const LS_PROFILE = 'raai_profile';
+
+function lsGetChats() {
+  try { return JSON.parse(localStorage.getItem(LS_CHATS) || '[]'); } catch(e) { return []; }
+}
+function lsSaveChats(chats) {
+  localStorage.setItem(LS_CHATS, JSON.stringify(chats));
+}
+function lsGetProfile() {
+  try { return JSON.parse(localStorage.getItem(LS_PROFILE) || '{}'); } catch(e) { return {}; }
+}
+function lsGetActive() {
+  return localStorage.getItem(LS_ACTIVE) || null;
+}
+function lsSetActive(cid) {
+  localStorage.setItem(LS_ACTIVE, cid);
+}
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+function nowStr() {
+  const d = new Date();
+  return d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+}
+
 // ── Init ──────────────────────────────────────────────
-async function init() {
-  const res  = await fetch("/chats");
-  const data = await res.json();
-  activeChatId = data.active;
-  renderChatList(data.chats);
-  const active = data.chats.find(c => c.active);
-  if (active && active.preview !== "No messages yet") {
-    await loadMessages(activeChatId);
+function init() {
+  let chats = lsGetChats();
+  // Create first chat if none exist
+  if (!chats.length) {
+    const cid = genId();
+    chats = [{ id: cid, title: 'New Chat', created: nowStr(), messages: [] }];
+    lsSaveChats(chats);
+    lsSetActive(cid);
+  }
+  let activeId = lsGetActive();
+  if (!activeId || !chats.find(c => c.id === activeId)) {
+    activeId = chats[0].id;
+    lsSetActive(activeId);
+  }
+  activeChatId = activeId;
+  refreshChats();
+  // Load messages of active chat
+  const activeChat = chats.find(c => c.id === activeId);
+  if (activeChat && activeChat.messages.length) {
+    if (curTitleEl) curTitleEl.textContent = activeChat.title;
+    activeChat.messages.forEach(m => addMessage(m.role === 'user' ? 'user' : 'bot', m.content, false));
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  } else {
+    messagesEl.innerHTML = showWelcome();
+    if (curTitleEl) curTitleEl.textContent = 'New Chat';
   }
 }
 
@@ -1478,10 +1523,20 @@ function switchPage(p) {
   if (mEl) mEl.classList.add("active");
 }
 
-// ── Chat History ───────────────────────────────────────
-function renderChatList(chats) {
+// ── Chat History (localStorage) ────────────────────────
+function refreshChats() {
+  const chats   = lsGetChats();
+  const activeId = lsGetActive();
   chatListEl.innerHTML = "";
-  chats.forEach(chat => chatListEl.appendChild(makeChatItem(chat)));
+  // Sort newest first
+  [...chats].reverse().forEach(chat => {
+    const msgs    = chat.messages || [];
+    const preview = msgs.length ? msgs[msgs.length-1].content.slice(0,45)+'...' : 'No messages yet';
+    chatListEl.appendChild(makeChatItem({
+      id: chat.id, title: chat.title, preview,
+      active: chat.id === activeId
+    }));
+  });
 }
 
 function makeChatItem(chat) {
@@ -1500,11 +1555,14 @@ function makeChatItem(chat) {
   return el;
 }
 
-async function newChat() {
-  const res = await fetch("/chats/new", { method:"POST" });
-  const data = await res.json();
-  activeChatId = data.chat_id;
-  await refreshChats();
+function newChat() {
+  const cid   = genId();
+  const chats = lsGetChats();
+  chats.push({ id: cid, title: 'New Chat', created: nowStr(), messages: [] });
+  lsSaveChats(chats);
+  lsSetActive(cid);
+  activeChatId = cid;
+  refreshChats();
   messagesEl.innerHTML = showWelcome();
   if (curTitleEl) curTitleEl.textContent = "New Chat";
   lastAcademicResult = "";
@@ -1512,44 +1570,54 @@ async function newChat() {
   switchPage("chat");
 }
 
-async function switchChat(cid) {
+function switchChat(cid) {
   if (cid === activeChatId) return;
+  lsSetActive(cid);
   activeChatId = cid;
-  const res  = await fetch("/chats/switch", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({chat_id:cid}) });
-  const data = await res.json();
-  if (!data.success) return;
-  await refreshChats();
-  if (curTitleEl) curTitleEl.textContent = data.title;
+  refreshChats();
+  const chats = lsGetChats();
+  const chat  = chats.find(c => c.id === cid);
+  if (!chat) return;
+  if (curTitleEl) curTitleEl.textContent = chat.title;
   messagesEl.innerHTML = "";
   lastAcademicResult = "";
   clearAcademicOutput();
-  if (!data.messages || data.messages.length === 0) { messagesEl.innerHTML = showWelcome(); }
-  else { data.messages.forEach(m => { if(m.role !== "system") addMessage(m.role==="user"?"user":"bot", m.content, false); }); messagesEl.scrollTop=messagesEl.scrollHeight; }
+  if (!chat.messages || !chat.messages.length) {
+    messagesEl.innerHTML = showWelcome();
+  } else {
+    chat.messages.forEach(m => addMessage(m.role === 'user' ? 'user' : 'bot', m.content, false));
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
 }
 
-async function deleteChat(cid, e) {
+function deleteChat(cid, e) {
   e.stopPropagation();
   if (!confirm("Delete this chat?")) return;
-  const res  = await fetch("/chats/delete", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({chat_id:cid}) });
-  const data = await res.json();
-  if (data.success) { activeChatId = data.new_active; await refreshChats(); await loadMessages(activeChatId); }
-}
-
-async function loadMessages(cid) {
-  const res  = await fetch("/chats/switch", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({chat_id:cid}) });
-  const data = await res.json();
-  if (!data.success) return;
+  let chats = lsGetChats();
+  chats = chats.filter(c => c.id !== cid);
+  if (!chats.length) {
+    const ncid = genId();
+    chats = [{ id: ncid, title: 'New Chat', created: nowStr(), messages: [] }];
+    lsSaveChats(chats);
+    lsSetActive(ncid);
+    activeChatId = ncid;
+  } else {
+    lsSaveChats(chats);
+    const newActive = chats[chats.length - 1].id;
+    lsSetActive(newActive);
+    activeChatId = newActive;
+  }
+  refreshChats();
+  const activeChat = lsGetChats().find(c => c.id === activeChatId);
   messagesEl.innerHTML = "";
-  if (!data.messages || !data.messages.length) { messagesEl.innerHTML = showWelcome(); return; }
-  data.messages.forEach(m => { if(m.role!=="system") addMessage(m.role==="user"?"user":"bot",m.content,false); });
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-async function refreshChats() {
-  const res  = await fetch("/chats");
-  const data = await res.json();
-  renderChatList(data.chats);
-  return data;
+  if (activeChat && activeChat.messages.length) {
+    if (curTitleEl) curTitleEl.textContent = activeChat.title;
+    activeChat.messages.forEach(m => addMessage(m.role === 'user' ? 'user' : 'bot', m.content, false));
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  } else {
+    messagesEl.innerHTML = showWelcome();
+    if (curTitleEl) curTitleEl.textContent = 'New Chat';
+  }
 }
 
 function clearAcademicOutput() {
@@ -1700,15 +1768,45 @@ async function sendMessage() {
   const msg = inputEl.value.trim();
   if (!msg) return;
   inputEl.value = ""; inputEl.style.height = "auto";
+
+  // Save user message to localStorage
+  let chats = lsGetChats();
+  let chat  = chats.find(c => c.id === activeChatId);
+  if (!chat) { newChat(); chats = lsGetChats(); chat = chats.find(c => c.id === activeChatId); }
+  chat.messages.push({ role: 'user', content: msg });
+  // Auto-title on first message
+  if (chat.messages.filter(m=>m.role==='user').length === 1) {
+    chat.title = msg.slice(0, 32) + (msg.length > 32 ? '...' : '');
+    if (curTitleEl) curTitleEl.textContent = chat.title;
+  }
+  lsSaveChats(chats);
+  refreshChats();
+
   addMessage("user", msg); showTyping(true);
   if (window.setFaceThinking) setFaceThinking(true);
+
   try {
-    const res  = await fetch("/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({message:msg}) });
+    const profile = lsGetProfile();
+    const res  = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: msg,
+        messages: chat.messages.slice(0, -1), // history before this msg
+        chat_id: activeChatId,
+        profile
+      })
+    });
     const data = await res.json();
     showTyping(false);
     if (window.setFaceThinking) setFaceThinking(false);
     addMessage("bot", data.reply);
-    if (data.title) { curTitleEl && (curTitleEl.textContent = data.title); await refreshChats(); }
+
+    // Save bot reply to localStorage
+    chats = lsGetChats();
+    chat  = chats.find(c => c.id === activeChatId);
+    if (chat) { chat.messages.push({ role: 'assistant', content: data.reply }); lsSaveChats(chats); }
+    refreshChats();
   } catch(e) {
     showTyping(false);
     if (window.setFaceThinking) setFaceThinking(false);
@@ -1729,7 +1827,9 @@ fileInput.addEventListener("change", () => { if(fileInput.files[0]) uploadFile(f
 async function uploadFile(file) {
   fileBadge.className="file-badge uploading"; fileBadge.style.display="block";
   fileBadge.textContent=`⏳ Loading "${file.name}"...`; progressBar.style.display="block";
-  const form = new FormData(); form.append("file",file);
+  const form = new FormData();
+  form.append("file", file);
+  form.append("chat_id", activeChatId || 'default');
   try {
     const res  = await fetch("/upload",{method:"POST",body:form});
     const data = await res.json(); progressBar.style.display="none";
@@ -1744,21 +1844,23 @@ async function uploadFile(file) {
 }
 
 async function quickSummarize() {
+  const profile = lsGetProfile();
   switchPage("chat"); addMessage("user","Summarize the uploaded file"); showTyping(true);
-  try { const res=await fetch("/summarize",{method:"POST"}); const d=await res.json(); showTyping(false); addMessage("bot",d.reply); }
+  try { const res=await fetch("/summarize",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:activeChatId,profile})}); const d=await res.json(); showTyping(false); addMessage("bot",d.reply); }
   catch(e) { showTyping(false); addMessage("bot","❌ Error."); }
 }
 
 async function quickTranslate() {
   const lang = document.getElementById("langInput").value.trim();
   if (!lang) { alert("Type a language first!"); return; }
+  const profile = lsGetProfile();
   switchPage("chat"); addMessage("user",`Translate the file to ${lang}`); showTyping(true);
-  try { const res=await fetch("/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language:lang})}); const d=await res.json(); showTyping(false); addMessage("bot",d.reply); }
+  try { const res=await fetch("/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language:lang,chat_id:activeChatId,profile})}); const d=await res.json(); showTyping(false); addMessage("bot",d.reply); }
   catch(e) { showTyping(false); addMessage("bot","❌ Error."); }
 }
 
 async function clearFile() {
-  await fetch("/clear-file",{method:"POST"});
+  await fetch("/clear-file",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:activeChatId})});
   fileBadge.style.display="none"; fileBadge.className="file-badge";
   addMessage("bot","🗑️ File cleared! Upload a new one anytime bro."); switchPage("chat");
 }
@@ -2011,14 +2113,17 @@ function showAcademicResult(reply) {
   out.scrollIntoView({behavior:"smooth",block:"start"});
 }
 
-async function saveToChatHistory(label, content) {
-  // Save the academic result into the active chat via a silent chat message
+function saveToChatHistory(label, content) {
+  // Save academic result to localStorage chat history
   try {
-    await fetch("/chat/save-note", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({content})
-    });
-    await refreshChats();
+    const chats = lsGetChats();
+    const chat  = chats.find(c => c.id === activeChatId);
+    if (chat) {
+      chat.messages.push({ role: 'assistant', content: `[${label}]\n${content}` });
+      if (chat.title === 'New Chat') chat.title = 'Academic: ' + content.slice(0,28) + '...';
+      lsSaveChats(chats);
+      refreshChats();
+    }
   } catch(e) {}
 }
 
@@ -2031,10 +2136,16 @@ async function askAcademicDoubt() {
   const contextMsg = `[Academic Result Context]\n${lastAcademicResult.slice(0,800)}\n\n[My Doubt]\n${doubt}`;
   addMessage("user", doubt); showTyping(true);
   try {
-    const res = await fetch("/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({message: contextMsg, display_message: doubt}) });
+    const chats = lsGetChats();
+    const chat  = chats.find(c => c.id === activeChatId);
+    const history = chat ? chat.messages : [];
+    const profile = lsGetProfile();
+    const res = await fetch("/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({message: contextMsg, display_message: doubt, messages: history, chat_id: activeChatId, profile}) });
     const data = await res.json();
     showTyping(false); addMessage("bot", data.reply);
-    if (data.title) { if(curTitleEl) curTitleEl.textContent = data.title; await refreshChats(); }
+    // Save to localStorage
+    const chats2 = lsGetChats(); const chat2 = chats2.find(c=>c.id===activeChatId);
+    if(chat2){chat2.messages.push({role:'user',content:contextMsg});chat2.messages.push({role:'assistant',content:data.reply});lsSaveChats(chats2);refreshChats();}
   } catch(e) { showTyping(false); addMessage("bot","❌ Can't reach the server bro!"); }
 }
 
@@ -2047,7 +2158,7 @@ async function runPredictions() {
 
   // Get topic from uploaded file via backend first
   try {
-    const topicRes = await fetch("/academic/get-topic", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({})});
+    const topicRes = await fetch("/academic/get-topic", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({chat_id: activeChatId})});
     const topicData = await topicRes.json();
     const topic = topicData.topic || "the uploaded document subject";
 
@@ -2099,14 +2210,16 @@ At the end add a ## Tips section with 3-4 study tips for this topic.`
       showAcademicResult(fullText);
     } else {
       // Fallback to local AI if Anthropic API fails
-      const res = await fetch("/academic/exam-questions", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type:"predictions"})});
+      const profile = lsGetProfile();
+    const res = await fetch("/academic/exam-questions", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type:"predictions", chat_id: activeChatId, profile})});
       const localData = await res.json();
       showAcademicResult(localData.reply);
     }
   } catch(e) {
     // Fallback to local
     try {
-      const res = await fetch("/academic/exam-questions", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type:"predictions"})});
+      const profile = lsGetProfile();
+      const res = await fetch("/academic/exam-questions", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type:"predictions", chat_id: activeChatId, profile})});
       const localData = await res.json();
       showAcademicResult(localData.reply);
     } catch(e2) {
@@ -2122,7 +2235,8 @@ async function runAcademic(type) {
   document.getElementById("academicDoubtBar").classList.remove("visible");
   out.scrollIntoView({behavior:"smooth",block:"nearest"});
   try {
-    const res  = await fetch("/academic/exam-questions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type}) });
+    const profile = lsGetProfile();
+    const res  = await fetch("/academic/exam-questions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type, chat_id: activeChatId, profile}) });
     const data = await res.json();
     if (type === "flashcards") {
       showFlashcards(data.reply);
@@ -2154,15 +2268,21 @@ Be extremely specific. No generic advice. Only things that directly help score h
   showTyping(true);
 
   try {
+    const chats  = lsGetChats();
+    const chat   = chats.find(c => c.id === activeChatId);
+    const history = chat ? chat.messages : [];
+    const profile = lsGetProfile();
     const res = await fetch('/chat', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({message: prompt, display_message: `Detailed study plan for ${subjectName}`})
+      body: JSON.stringify({message: prompt, display_message: `Detailed study plan for ${subjectName}`, messages: history, chat_id: activeChatId, profile})
     });
     const data = await res.json();
     showTyping(false);
     addMessage('bot', data.reply);
-    if (data.title) await refreshChats();
+    // Save to localStorage
+    const chats2 = lsGetChats(); const chat2 = chats2.find(c=>c.id===activeChatId);
+    if(chat2){chat2.messages.push({role:'user',content:prompt});chat2.messages.push({role:'assistant',content:data.reply});lsSaveChats(chats2);refreshChats();}
   } catch(e) {
     showTyping(false);
     addMessage('bot', '❌ Error getting tips bro!');
@@ -2428,7 +2548,8 @@ async function runCGPA() {
   };
 
   try {
-    const res  = await fetch("/academic/cgpa-planner",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const profile = lsGetProfile();
+    const res  = await fetch("/academic/cgpa-planner",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body, profile})});
     const data = await res.json();
     showCGPAPlan(data.reply, {...body, current, target, credits: totalCredits, subjects_list: subjects});
   } catch(e) { out.innerHTML = "❌ Error."; }
@@ -2438,7 +2559,8 @@ async function checkAttendance() {
   const total     = parseInt(document.getElementById("attTotal").value)     || 0;
   const attended  = parseInt(document.getElementById("attAttended").value)  || 0;
   const remaining = parseInt(document.getElementById("attRemaining").value) || 0;
-  const res  = await fetch("/academic/attendance", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({total_classes:total,attended,remaining}) });
+  const profile = lsGetProfile();
+  const res  = await fetch("/academic/attendance", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({total_classes:total,attended,remaining,profile}) });
   const data = await res.json();
   const resEl = document.getElementById("attResult"); resEl.style.display="block";
   const pct = data.current_pct || 0;
@@ -2813,7 +2935,8 @@ async function analyzeCode(mode) {
   </div>`;
   out.scrollIntoView({behavior:"smooth",block:"nearest"});
   try {
-    const res  = await fetch("/academic/code-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,mode})});
+    const profile = lsGetProfile();
+    const res  = await fetch("/academic/code-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,mode,profile})});
     const data = await res.json();
     if (mode === 'review') {
       showCodeReview(data.reply);
@@ -2969,7 +3092,8 @@ async function runQPGenerator() {
   document.getElementById('academicDoubtBar').classList.remove('visible');
   out.scrollIntoView({behavior:'smooth',block:'nearest'});
   try {
-    const res  = await fetch('/academic/generate-qp', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, dept, year, exam})});
+    const profile = lsGetProfile();
+    const res  = await fetch('/academic/generate-qp', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, dept, year, exam, chat_id: activeChatId, profile})});
     const data = await res.json();
     if (data.success) {
       lastQPData = {raw: data.reply, subject, dept, year, exam};
@@ -3123,7 +3247,8 @@ async function runAnswerKey() {
   document.getElementById('academicDoubtBar').classList.remove('visible');
   out.scrollIntoView({behavior:'smooth',block:'nearest'});
   try {
-    const res  = await fetch('/academic/answer-key', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})});
+    const profile = lsGetProfile();
+    const res  = await fetch('/academic/answer-key', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({chat_id: activeChatId, profile})});
     const data = await res.json();
     if (data.success) {
       showAnswerKeyResult(data.reply);
